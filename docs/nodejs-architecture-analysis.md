@@ -111,7 +111,7 @@ User right-clicks .md file
 | Fenced code blocks | Built-in | ✅ Core | Included by default |
 | Tables | Built-in (GFM) | ✅ Core | `markdown-it` supports GFM tables natively |
 | MD in HTML | `markdown-it-html` or custom rule | ✅ Stable | Less commonly needed |
-| Mermaid diagrams | Custom fence renderer | ✅ Simple | Render `mermaid` fences as `<pre class="mermaid">` divs; inject CDN script |
+| Mermaid diagrams | Custom fence renderer | ✅ Simple | Render `mermaid` fences as `<pre class="mermaid">` elements; inject CDN script |
 | GitHub alerts | `markdown-it-github-alerts` | ✅ Stable | Handles `> [!NOTE]`, `> [!WARNING]`, etc. |
 | Task lists | `markdown-it-task-lists` | ✅ Stable | Widely used, GFM-compatible |
 | Math/KaTeX | `@mdit/plugin-katex` or `markdown-it-katex` | ✅ Stable | Supports `$inline$` and `$$block$$` |
@@ -247,10 +247,10 @@ const BROWSER_PATHS = {
 };
 ```
 
-**Coverage analysis**:
+**Coverage analysis** (note: VS Code users are a developer-skewed population with higher Chrome/Chromium adoption than general desktop market share):
 - **Windows**: Edge is pre-installed on Windows 10/11 → **~100% coverage** of Windows VS Code users
-- **macOS**: Chrome has ~65% market share on macOS → **~90% coverage** (most devs have Chrome)
-- **Linux**: Chrome/Chromium has 70%+ share on Linux desktops → **~85% coverage**
+- **macOS**: Chrome has ~65% general market share on macOS; developer adoption is higher due to DevTools usage → **~90% coverage**
+- **Linux**: Chrome/Chromium has 70%+ general share on Linux desktops; developer adoption is higher due to web development tooling → **~85% coverage**
 
 **Fallback**: If no browser is detected, show an actionable error message:
 > "md2pdf: No Chrome/Edge found. Install Chrome, set `md2pdf.browserPath`, or run `sudo apt install chromium-browser`."
@@ -313,7 +313,7 @@ The only variable is the **Chrome version** — a user's system Chrome may be a 
 - **Custom install paths**: Handled by the `md2pdf.browserPath` setting
 - **Remote/container environments**: May have no browser — fallback message is essential
 
-**Existing prior art**: The popular [Markdown PDF (Revived)](https://marketplace.visualstudio.com/items?itemName=AUAggy.markdown-pdf-revived) VS Code extension uses this exact approach with system Chrome detection, confirming it's production-ready.
+**Existing prior art**: The [Markdown PDF (Revived)](https://marketplace.visualstudio.com/items?itemName=AUAggy.markdown-pdf-revived) VS Code extension uses this exact approach with system Chrome detection (as of early 2025), confirming it's a production-viable pattern. Similar system-browser detection is also used by `md-to-pdf` (npm CLI tool).
 
 ### Q4: Maintenance Burden
 
@@ -432,7 +432,7 @@ Extension bundle (all bundled):
   Total:                     ~2.7 MB
 ```
 
-**Extension size: 70 KB → 2.7 MB** (larger bundle, but self-contained — no downloads at runtime).
+**Extension size: 70 KB → 2.7 MB** (larger bundle, but self-contained — no downloads at runtime). This is a ~38x increase in extension marketplace download size, but still well within the norm for VS Code extensions (many popular extensions are 5–50 MB). The trade-off is justified by eliminating ~200 MB of runtime downloads that users currently experience on first use.
 **User-side install: 158–258 MB → 0 MB** (uses existing system browser).
 **Net savings: ~155–255 MB per user.**
 
@@ -464,6 +464,7 @@ Extension bundle (all bundled):
 | markdown-it plugin gap | New MD feature unsupported | Plugin ecosystem is vast; custom plugins are straightforward |
 | Chrome version differences | Minor rendering variations | Chromium PDF rendering is stable across versions |
 | puppeteer-core API changes | Breaking update | Pin major version; API is stable and well-maintained |
+| Extension bundle size increase | 70 KB → 2.7 MB marketplace download | Still small by VS Code extension standards; eliminates ~200 MB of runtime downloads |
 
 ### Medium Risk
 
