@@ -120,11 +120,12 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run bundle-pipeline && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "bundle-pipeline": "node scripts/bundle-pipeline.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",

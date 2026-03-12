@@ -41,6 +41,8 @@ User right-clicks .md file
 
 - `src/extension.ts` — Entry point. Registers commands, handles UI.
 - `src/converter.ts` — Subprocess wrapper. Runs md2pdf pipeline securely.
+- `src/dependencies.ts` — Auto-installs Python/Node.js deps on first use.
+- `scripts/bundle-pipeline.js` — Copies md2pdf lib/ and themes/ into extension.
 - `test/converter.test.ts` — Unit tests for path validation and security.
 - `package.json` — Extension manifest with commands, menus, configuration.
 

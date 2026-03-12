@@ -13,17 +13,14 @@ This extension is a VS Code wrapper around the [md2pdf](https://github.com/dcucc
 
 ## Requirements
 
-This extension requires the [md2pdf](https://github.com/dcuccia/md2pdf) tool to be installed:
+The extension bundles the [md2pdf](https://github.com/dcuccia/md2pdf) pipeline scripts and themes. You need:
 
-```bash
-git clone https://github.com/dcuccia/md2pdf.git
-```
+- **Python 3.10+** — for Markdown→HTML conversion and chart generation
+- **Node.js 18+** — for HTML→PDF rendering via Playwright
 
-You also need:
-- **Python 3.10+** with `markdown` and `pyyaml` packages
-- **Node.js 18+** with `playwright` package
+On first export, the extension will automatically install the required Python packages (`markdown`, `pyyaml`) and Node.js packages (`playwright` + Chromium browser). This is a one-time setup.
 
-The extension will look for `md2pdf` in sibling directories of your workspace. You can also set the path explicitly in settings.
+You can also point the extension at an existing md2pdf installation via the `md2pdf.toolPath` setting.
 
 ## Extension Settings
 

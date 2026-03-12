@@ -1,6 +1,11 @@
 /**
  * md2pdf Converter — Secure subprocess wrapper for the md2pdf CLI pipeline.
  *
+ * Resolution order for pipeline scripts:
+ * 1. User-configured md2pdf.toolPath
+ * 2. Bundled pipeline (shipped inside the extension)
+ * 3. Sibling directory or home directory
+ *
  * Security hardening:
  * - Uses child_process.spawn (NOT exec) with shell: false
  * - Validates all file paths are within the workspace
@@ -12,9 +17,11 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 import { spawn, ChildProcess } from "child_process";
+import { DependencyManager } from "./dependencies";
 
 /** Resolved paths to the md2pdf pipeline scripts. */
 interface PipelinePaths {
+  root: string;
   md2svg: string;
   md2html: string;
   html2pdf: string;
@@ -39,6 +46,16 @@ export class Converter {
     const validated = this.validatePath(mdPath);
     const config = this.getConfig();
     const pipeline = this.resolvePipeline(config);
+
+    // Ensure dependencies are installed before running
+    const depManager = new DependencyManager(pipeline.root);
+    const ready = await depManager.ensureDependencies(
+      config.pythonPath,
+      config.nodePath
+    );
+    if (!ready) {
+      throw new Error("Required dependencies are not available.");
+    }
 
     const dir = path.dirname(validated);
     const base = path.basename(validated, ".md");
@@ -145,13 +162,14 @@ export class Converter {
     if (config.toolPath) {
       root = path.resolve(config.toolPath);
     } else {
-      // Look for md2pdf in common locations
+      // Priority 1: Bundled pipeline (inside the extension)
+      const bundled = path.join(this.context.extensionPath, "pipeline");
+      // Priority 2: Sibling directories and home
       const candidates = [
-        // Sibling to workspace folders
+        bundled,
         ...((vscode.workspace.workspaceFolders ?? []).map((f) =>
           path.join(path.dirname(f.uri.fsPath), "md2pdf")
         )),
-        // Home directory
         path.join(process.env.HOME || process.env.USERPROFILE || "", "md2pdf"),
       ];
 
@@ -174,6 +192,7 @@ export class Converter {
     }
 
     return {
+      root,
       md2svg: path.join(root, "lib", "md2svg.py"),
       md2html: path.join(root, "lib", "md2html.py"),
       html2pdf: path.join(root, "lib", "html2pdf.js"),

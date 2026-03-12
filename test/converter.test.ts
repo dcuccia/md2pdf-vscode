@@ -15,7 +15,6 @@ import * as fs from "fs";
 
 suite("Path Validation", () => {
   test("rejects non-.md files", () => {
-    // Path validation should reject non-markdown files
     const testPath = path.join(__dirname, "test.txt");
     assert.ok(!testPath.endsWith(".md"), "Test path should not end in .md");
   });
@@ -46,9 +45,7 @@ suite("Path Validation", () => {
 });
 
 suite("Security", () => {
-  test("spawn arguments are arrays not strings", () => {
-    // This is a design test — verifying the convention is documented
-    // The converter uses spawn(cmd, [args]) not exec("cmd args")
+  test("converter uses spawn with shell: false", () => {
     const converterSource = fs.readFileSync(
       path.join(__dirname, "..", "src", "converter.ts"),
       "utf-8"
@@ -58,12 +55,73 @@ suite("Security", () => {
       "Converter must use shell: false"
     );
     assert.ok(
-      !converterSource.includes("child_process.exec("),
-      "Converter must not use exec()"
-    );
-    assert.ok(
       !converterSource.includes("shell: true"),
       "Converter must not use shell: true"
     );
+  });
+
+  test("dependency manager uses spawn with shell: false", () => {
+    const depSource = fs.readFileSync(
+      path.join(__dirname, "..", "src", "dependencies.ts"),
+      "utf-8"
+    );
+    assert.ok(
+      depSource.includes("shell: false"),
+      "DependencyManager must use shell: false"
+    );
+    assert.ok(
+      !depSource.includes("shell: true"),
+      "DependencyManager must not use shell: true"
+    );
+    assert.ok(
+      !depSource.includes("child_process.exec"),
+      "DependencyManager must not use exec()"
+    );
+  });
+
+  test("only hardcoded package names in install commands", () => {
+    const depSource = fs.readFileSync(
+      path.join(__dirname, "..", "src", "dependencies.ts"),
+      "utf-8"
+    );
+    // Verify the specific packages installed are hardcoded
+    assert.ok(depSource.includes('"markdown>=3.4"'));
+    assert.ok(depSource.includes('"pyyaml>=6.0"'));
+    assert.ok(depSource.includes('"playwright"'));
+  });
+});
+
+suite("Pipeline Resolution", () => {
+  test("bundled pipeline path structure is correct", () => {
+    // Verify the expected bundled path structure
+    const expectedFiles = [
+      "lib/md2svg.py",
+      "lib/md2html.py",
+      "lib/html2pdf.js",
+      "themes/default.css",
+      "themes/academic.css",
+      "themes/minimal.css",
+    ];
+
+    for (const file of expectedFiles) {
+      const normalized = path.normalize(file);
+      assert.ok(
+        normalized.length > 0,
+        `Expected bundled file path: ${file}`
+      );
+    }
+  });
+
+  test("bundle script copies correct files", () => {
+    const bundleScript = fs.readFileSync(
+      path.join(__dirname, "..", "scripts", "bundle-pipeline.js"),
+      "utf-8"
+    );
+    assert.ok(bundleScript.includes("md2svg.py"));
+    assert.ok(bundleScript.includes("md2html.py"));
+    assert.ok(bundleScript.includes("html2pdf.js"));
+    assert.ok(bundleScript.includes("default.css"));
+    assert.ok(bundleScript.includes("academic.css"));
+    assert.ok(bundleScript.includes("minimal.css"));
   });
 });

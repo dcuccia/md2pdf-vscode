@@ -3,3 +3,9 @@ out/
 node_modules/
 *.vsix
 .DS_Store
+scripts/
+test/
+src/
+tsconfig.json
+.gitignore
+CLAUDE.md
