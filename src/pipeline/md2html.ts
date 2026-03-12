@@ -22,8 +22,6 @@ import MarkdownIt from "markdown-it";
 // Frontmatter
 // ═══════════════════════════════════════════════════════════════════════
 
-const FRONTMATTER_RE = /\A---\s*\n(.*?)\n---\s*\n/s;
-
 /** Frontmatter metadata parsed from the document. */
 export interface FrontmatterMeta {
   title?: string;
