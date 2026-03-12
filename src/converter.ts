@@ -227,7 +227,7 @@ export class Converter {
       const child: ChildProcess = spawn(command, args, {
         shell: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env },
+        env: { ...process.env, PYTHONUTF8: "1" },
       });
 
       let stdout = "";
