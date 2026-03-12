@@ -1,22 +1,35 @@
 # Build and publish a .vsix to GitHub Releases.
 #
-# Trigger manually from the Actions tab. Reads the version from package.json,
-# compiles, bundles the md2pdf pipeline, packages the .vsix, and creates a
-# GitHub Release with the artifact attached.
+# Two modes:
+#   1. AUTOMATIC (push to main) — creates a dev pre-release with a date+SHA tag
+#      e.g. v0.1.0-dev.20260312.abc1234. Old dev releases are pruned (keep 5).
+#   2. MANUAL (workflow_dispatch) — creates a stable (or pre-release) from the
+#      version in package.json. Bump the version BEFORE triggering.
 #
 # Prerequisites:
-#   - The md2pdf sibling repo must be checked out (handled by this workflow)
-#   - Bump the version in package.json BEFORE triggering
+#   - The md2pdf sibling repo is checked out automatically by this workflow
 
 name: Release
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
   workflow_dispatch:
     inputs:
       prerelease:
         description: "Mark as pre-release?"
         type: boolean
         default: true
+
+# Cancel in-flight dev builds when a new push lands on main
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   release:
@@ -40,26 +53,35 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Bundle pipeline
-        run: npm run bundle-pipeline
-
-      - name: Compile TypeScript
-        run: npm run compile
-
-      - name: Read version from package.json
+      - name: Compute version and tag
         id: version
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          BASE=$(node -p "require('./package.json').version")
+          if [ "${{ github.event_name }}" = "push" ]; then
+            DATE=$(date -u +%Y%m%d)
+            SHA=$(echo "${{ github.sha }}" | head -c 7)
+            VERSION="${BASE}-dev.${DATE}.${SHA}"
+            TAG="v${VERSION}"
+            IS_PRERELEASE=true
+            IS_DEV=true
+          else
+            VERSION="${BASE}"
+            TAG="v${VERSION}"
+            IS_PRERELEASE=${{ inputs.prerelease }}
+            IS_DEV=false
+          fi
+          echo "version=$VERSION"     >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"             >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "is_dev=$IS_DEV"       >> "$GITHUB_OUTPUT"
 
       - name: Package .vsix
-        run: npx @vscode/vsce package --no-dependencies
-        # --no-dependencies: skip npm install inside vsce (we already did npm ci)
+        run: npx @vscode/vsce package --no-dependencies -o "md2pdf-${{ steps.version.outputs.version }}.vsix"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -76,5 +98,19 @@ jobs:
 
             See [CHANGELOG.md](https://github.com/dcuccia/md2pdf-vscode/blob/main/CHANGELOG.md) for details.
           files: "*.vsix"
-          prerelease: ${{ inputs.prerelease }}
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
           generate_release_notes: true
+
+      - name: Prune old dev releases (keep latest 5)
+        if: steps.version.outputs.is_dev == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # List all dev releases, sorted newest first, skip the first 5
+          gh release list --limit 100 --json tagName,isPrerelease \
+            | jq -r '.[] | select(.isPrerelease and (.tagName | test("-dev\\."))) | .tagName' \
+            | tail -n +6 \
+            | while read -r tag; do
+                echo "Deleting old dev release: $tag"
+                gh release delete "$tag" --yes --cleanup-tag
+              done
