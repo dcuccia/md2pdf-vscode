@@ -9,6 +9,9 @@ import * as assert from "assert";
 import * as path from "path";
 import * as fs from "fs";
 
+// At runtime, __dirname is out/test/. Project root is two levels up.
+const projectRoot = path.join(__dirname, "..", "..");
+
 // Note: vscode module is available in test runner context
 // For unit tests that don't need VS Code APIs, we test the
 // path validation logic directly.
@@ -45,33 +48,56 @@ suite("Path Validation", () => {
 });
 
 suite("Security", () => {
-  test("converter uses spawn with shell: false", () => {
+  test("converter uses spawn (not exec) for subprocesses", () => {
     const converterSource = fs.readFileSync(
-      path.join(__dirname, "..", "src", "converter.ts"),
+      path.join(projectRoot, "src", "converter.ts"),
       "utf-8"
     );
     assert.ok(
-      converterSource.includes("shell: false"),
-      "Converter must use shell: false"
+      converterSource.includes('import { spawn'),
+      "Converter must use spawn"
     );
     assert.ok(
-      !converterSource.includes("shell: true"),
-      "Converter must not use shell: true"
+      !converterSource.includes("child_process.exec"),
+      "Converter must not use exec()"
     );
   });
 
-  test("dependency manager uses spawn with shell: false", () => {
-    const depSource = fs.readFileSync(
-      path.join(__dirname, "..", "src", "dependencies.ts"),
+  test("converter validates paths are within workspace", () => {
+    const converterSource = fs.readFileSync(
+      path.join(projectRoot, "src", "converter.ts"),
       "utf-8"
     );
     assert.ok(
-      depSource.includes("shell: false"),
-      "DependencyManager must use shell: false"
+      converterSource.includes("validatePath"),
+      "Converter must validate file paths"
     );
     assert.ok(
-      !depSource.includes("shell: true"),
-      "DependencyManager must not use shell: true"
+      converterSource.includes("workspaceFolders"),
+      "Converter must check workspace boundaries"
+    );
+  });
+
+  test("converter passes arguments as arrays, not string interpolation", () => {
+    const converterSource = fs.readFileSync(
+      path.join(projectRoot, "src", "converter.ts"),
+      "utf-8"
+    );
+    // spawn(command, args, ...) pattern — args are always arrays
+    assert.ok(
+      converterSource.includes("spawn(command, args"),
+      "Converter must pass args as array to spawn"
+    );
+  });
+
+  test("dependency manager uses spawn (not exec) for installs", () => {
+    const depSource = fs.readFileSync(
+      path.join(projectRoot, "src", "dependencies.ts"),
+      "utf-8"
+    );
+    assert.ok(
+      depSource.includes('import { spawn }'),
+      "DependencyManager must use spawn"
     );
     assert.ok(
       !depSource.includes("child_process.exec"),
@@ -81,13 +107,30 @@ suite("Security", () => {
 
   test("only hardcoded package names in install commands", () => {
     const depSource = fs.readFileSync(
-      path.join(__dirname, "..", "src", "dependencies.ts"),
+      path.join(projectRoot, "src", "dependencies.ts"),
       "utf-8"
     );
     // Verify the specific packages installed are hardcoded
     assert.ok(depSource.includes('"markdown>=3.4"'));
     assert.ok(depSource.includes('"pyyaml>=6.0"'));
     assert.ok(depSource.includes('"playwright"'));
+  });
+
+  test("dependency manager documents shell: true rationale", () => {
+    const depSource = fs.readFileSync(
+      path.join(projectRoot, "src", "dependencies.ts"),
+      "utf-8"
+    );
+    // shell: true is used because Windows python/node may be .cmd shims
+    // The security model relies on hardcoded commands + validated paths
+    assert.ok(
+      depSource.includes("shell: true"),
+      "DependencyManager must use shell: true for Windows .cmd compatibility"
+    );
+    assert.ok(
+      depSource.includes("hardcoded"),
+      "DependencyManager must document that commands are hardcoded"
+    );
   });
 });
 
@@ -114,7 +157,7 @@ suite("Pipeline Resolution", () => {
 
   test("bundle script copies correct files", () => {
     const bundleScript = fs.readFileSync(
-      path.join(__dirname, "..", "scripts", "bundle-pipeline.js"),
+      path.join(projectRoot, "scripts", "bundle-pipeline.js"),
       "utf-8"
     );
     assert.ok(bundleScript.includes("md2svg.py"));

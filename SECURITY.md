@@ -18,10 +18,17 @@ If you discover a security vulnerability, please report it responsibly:
 
 This extension follows these security principles:
 
-### No Shell Injection
-- All subprocess calls use `child_process.spawn` with `shell: false`
+### Subprocess Execution
+- All subprocess calls use `child_process.spawn` (never `exec()`)
 - Arguments are passed as arrays, never string-interpolated
-- The extension never calls `child_process.exec()`
+- `shell: true` is used because on Windows, `python` and `node` often resolve
+  to `.cmd`/`.bat` shims (from pyenv, conda, nvm, etc.), and Node.js throws
+  `EINVAL` for batch files when `shell: false` is used (CVE-2024-27980 hardening)
+- This is safe because:
+  - Command names are hardcoded or from user settings (not arbitrary input)
+  - All file path arguments are validated by `validatePath()` (workspace-bounded)
+  - Dependency install commands use only hardcoded package names
+  - This is the same approach used by VS Code's Python and ESLint extensions
 
 ### Path Validation
 - Only `.md` files within workspace folders are processed

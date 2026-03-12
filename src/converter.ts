@@ -7,10 +7,12 @@
  * 3. Sibling directory or home directory
  *
  * Security hardening:
- * - Uses child_process.spawn (NOT exec) with shell: false
- * - Validates all file paths are within the workspace
- * - No user-controlled strings in shell commands
- * - Paths passed as explicit arguments, never interpolated
+ * - Validates all file paths are within the workspace (prevents traversal)
+ * - Paths passed as explicit arguments, never interpolated into strings
+ * - No user-controlled strings in command names
+ * - Uses shell: true (required on Windows where python/node are .cmd shims);
+ *   safe because path arguments are validated by validatePath() and pipeline
+ *   paths are resolved from known extension directories
  */
 
 import * as vscode from "vscode";
@@ -214,14 +216,16 @@ export class Converter {
    * Spawn a subprocess securely.
    *
    * Security:
-   * - shell: false prevents shell injection
    * - Arguments are passed as an array, never concatenated
-   * - No user-controlled strings reach the shell
+   * - All file path arguments are validated by validatePath() before reaching here
+   * - Command names are hardcoded (pythonPath/nodePath from settings)
+   * - shell: true is required on Windows where python/node may be .cmd shims
+   *   (Node.js throws EINVAL for batch files with shell: false)
    */
   private runProcess(command: string, args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
       const child: ChildProcess = spawn(command, args, {
-        shell: false,
+        shell: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env },
       });

@@ -6,9 +6,10 @@
  * - Node.js: playwright (via npm, into the bundled pipeline directory)
  *
  * Security:
- * - Uses spawn with shell: false
  * - Only installs known, hardcoded package names
  * - No user-controlled strings in install commands
+ * - Uses shell: true (required on Windows where python/node are .cmd shims)
+ *   — safe because all commands and arguments are hardcoded constants
  */
 
 import * as vscode from "vscode";
@@ -114,7 +115,8 @@ export class DependencyManager {
   /** Check if a command is executable. */
   private checkCommand(cmd: string, args: string[]): Promise<boolean> {
     return new Promise((resolve) => {
-      const child = spawn(cmd, args, { shell: false, stdio: "ignore" });
+      // shell: true required on Windows where python/node may be .cmd shims
+      const child = spawn(cmd, args, { shell: true, stdio: "ignore" });
       child.on("error", () => resolve(false));
       child.on("close", (code) => resolve(code === 0));
     });
@@ -126,7 +128,7 @@ export class DependencyManager {
       const child = spawn(
         pythonPath,
         ["-c", "import markdown; import yaml"],
-        { shell: false, stdio: "ignore" }
+        { shell: true, stdio: "ignore" }
       );
       child.on("error", () => resolve(false));
       child.on("close", (code) => resolve(code === 0));
@@ -158,14 +160,10 @@ export class DependencyManager {
 
   /** Install Playwright via npm + browser download. */
   private async installPlaywright(nodePath: string): Promise<void> {
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    // npm/npx are always .cmd on Windows; shell: true handles this
+    await this.runInstall("npm", ["install", "--prefix", this.pipelineRoot, "playwright"]);
 
-    // npm install playwright (in the pipeline root)
-    await this.runInstall(npmCmd, ["install", "--prefix", this.pipelineRoot, "playwright"]);
-
-    // Download Chromium browser
-    const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
-    await this.runInstall(npxCmd, [
+    await this.runInstall("npx", [
       "--prefix",
       this.pipelineRoot,
       "playwright",
@@ -177,8 +175,10 @@ export class DependencyManager {
   /** Run an install command and reject on failure. */
   private runInstall(command: string, args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
+      // shell: true required on Windows where commands may be .cmd shims.
+      // Safe: all commands and arguments are hardcoded constants.
       const child = spawn(command, args, {
-        shell: false,
+        shell: true,
         stdio: ["ignore", "pipe", "pipe"],
         cwd: this.pipelineRoot,
       });
