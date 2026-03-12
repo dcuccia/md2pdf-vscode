@@ -1,0 +1,78 @@
+# Build and publish a .vsix to GitHub Releases.
+#
+# Trigger manually from the Actions tab. Reads the version from package.json,
+# compiles, bundles the md2pdf pipeline, packages the .vsix, and creates a
+# GitHub Release with the artifact attached.
+#
+# Prerequisites:
+#   - The md2pdf sibling repo must be checked out (handled by this workflow)
+#   - Bump the version in package.json BEFORE triggering
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: "Mark as pre-release?"
+        type: boolean
+        default: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v4
+
+      - name: Checkout md2pdf pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: dcuccia/md2pdf
+          path: ../md2pdf
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bundle pipeline
+        run: npm run bundle-pipeline
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Read version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Package .vsix
+        run: npx @vscode/vsce package --no-dependencies
+        # --no-dependencies: skip npm install inside vsce (we already did npm ci)
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body: |
+            ## md2pdf for VS Code ${{ steps.version.outputs.tag }}
+
+            Install manually:
+            ```
+            code --install-extension md2pdf-${{ steps.version.outputs.version }}.vsix
+            ```
+
+            See [CHANGELOG.md](https://github.com/dcuccia/md2pdf-vscode/blob/main/CHANGELOG.md) for details.
+          files: "*.vsix"
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: true

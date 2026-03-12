@@ -1,5 +1,4 @@
 .vscode-test/
-out/
 node_modules/
 *.vsix
 .DS_Store
@@ -9,3 +8,4 @@ src/
 tsconfig.json
 .gitignore
 CLAUDE.md
+out/test/
