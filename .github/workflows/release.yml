@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dcuccia/md2pdf
-          path: ../md2pdf
+          path: md2pdf
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -44,6 +44,8 @@ jobs:
 
       - name: Bundle pipeline
         run: npm run bundle-pipeline
+        env:
+          MD2PDF_SOURCE: ${{ github.workspace }}/md2pdf
 
       - name: Compile TypeScript
         run: npm run compile

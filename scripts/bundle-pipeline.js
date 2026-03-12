@@ -11,7 +11,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const SOURCE = path.resolve(__dirname, "..", "..", "md2pdf");
+const SOURCE = process.env.MD2PDF_SOURCE
+  ? path.resolve(process.env.MD2PDF_SOURCE)
+  : path.resolve(__dirname, "..", "..", "md2pdf");
 const DEST = path.resolve(__dirname, "..", "pipeline");
 
 const FILES_TO_COPY = [
