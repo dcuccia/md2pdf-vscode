@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      MD2PDF_SOURCE: ${{ github.workspace }}/md2pdf
 
     steps:
       - name: Checkout extension
@@ -44,8 +46,6 @@ jobs:
 
       - name: Bundle pipeline
         run: npm run bundle-pipeline
-        env:
-          MD2PDF_SOURCE: ${{ github.workspace }}/md2pdf
 
       - name: Compile TypeScript
         run: npm run compile
