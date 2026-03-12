@@ -1,206 +1,39 @@
 /**
- * md2pdf Dependency Manager — Auto-installs Python and Node.js dependencies.
+ * md2pdf Dependency Manager — Validates system browser availability.
  *
- * On first use (or when dependencies are missing), installs:
- * - Python: markdown, pyyaml (via pip, into user site-packages)
- * - Node.js: playwright (via npm, into the bundled pipeline directory)
+ * The pure Node.js pipeline requires only a system-installed Chromium-based
+ * browser (Chrome, Edge, or Chromium) for PDF generation. HTML-only export
+ * works without any browser.
  *
  * Security:
- * - Uses spawn with shell: false
- * - Only installs known, hardcoded package names
- * - No user-controlled strings in install commands
+ * - Only checks file existence at well-known system paths
+ * - No subprocess spawning or command execution
+ * - No user-controlled strings in any checks
  */
 
 import * as vscode from "vscode";
-import * as path from "path";
-import * as fs from "fs";
-import { spawn } from "child_process";
-
-/** Status of a dependency check. */
-interface DepStatus {
-  python: boolean;
-  node: boolean;
-  pipPackages: boolean;
-  playwright: boolean;
-}
+import { detectBrowser, getBrowserInstallHint } from "./pipeline";
 
 export class DependencyManager {
-  private pipelineRoot: string;
-
-  constructor(pipelineRoot: string) {
-    this.pipelineRoot = pipelineRoot;
-  }
-
   /**
-   * Ensure all dependencies are available.
-   * Shows progress notification during installation.
-   * Returns true if all deps are ready, false if user cancelled or critical failure.
+   * Check if a system browser is available for PDF rendering.
+   *
+   * Shows a warning if no browser is found but returns true — HTML export
+   * still works without a browser. Only PDF export requires a browser.
+   *
+   * @param browserPath - User-configured browser path (from settings)
+   * @returns true (always — browser is only needed for PDF, not HTML)
    */
-  async ensureDependencies(
-    pythonPath: string,
-    nodePath: string
-  ): Promise<boolean> {
-    const status = await this.checkDependencies(pythonPath, nodePath);
-
-    if (status.python && status.node && status.pipPackages && status.playwright) {
-      return true;
-    }
-
-    if (!status.python) {
-      vscode.window.showErrorMessage(
-        `md2pdf: Python not found at "${pythonPath}". ` +
-        "Install Python 3.10+ or set md2pdf.pythonPath in settings."
+  async checkBrowser(browserPath: string): Promise<boolean> {
+    const browser = detectBrowser(browserPath);
+    if (!browser) {
+      const hint = getBrowserInstallHint();
+      vscode.window.showWarningMessage(
+        `md2pdf: No Chrome/Edge browser detected. PDF export requires a Chromium-based browser. ${hint} ` +
+        "Or set md2pdf.browserPath in settings. HTML export will still work."
       );
       return false;
     }
-
-    if (!status.node) {
-      vscode.window.showErrorMessage(
-        `md2pdf: Node.js not found at "${nodePath}". ` +
-        "Install Node.js 18+ or set md2pdf.nodePath in settings."
-      );
-      return false;
-    }
-
-    // Install missing dependencies with progress
-    return vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "md2pdf: Installing dependencies...",
-        cancellable: false,
-      },
-      async (progress) => {
-        try {
-          if (!status.pipPackages) {
-            progress.report({ message: "Installing Python packages..." });
-            await this.installPipPackages(pythonPath);
-          }
-
-          if (!status.playwright) {
-            progress.report({ message: "Installing Playwright..." });
-            await this.installPlaywright(nodePath);
-          }
-
-          vscode.window.showInformationMessage(
-            "md2pdf: Dependencies installed successfully."
-          );
-          return true;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(
-            `md2pdf: Failed to install dependencies — ${msg}`
-          );
-          return false;
-        }
-      }
-    );
-  }
-
-  /** Check which dependencies are available. */
-  private async checkDependencies(
-    pythonPath: string,
-    nodePath: string
-  ): Promise<DepStatus> {
-    const [python, node, pipPackages, playwright] = await Promise.all([
-      this.checkCommand(pythonPath, ["--version"]),
-      this.checkCommand(nodePath, ["--version"]),
-      this.checkPipPackages(pythonPath),
-      this.checkPlaywright(),
-    ]);
-
-    return { python, node, pipPackages, playwright };
-  }
-
-  /** Check if a command is executable. */
-  private checkCommand(cmd: string, args: string[]): Promise<boolean> {
-    return new Promise((resolve) => {
-      const child = spawn(cmd, args, { shell: false, stdio: "ignore" });
-      child.on("error", () => resolve(false));
-      child.on("close", (code) => resolve(code === 0));
-    });
-  }
-
-  /** Check if required pip packages are importable. */
-  private checkPipPackages(pythonPath: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const child = spawn(
-        pythonPath,
-        ["-c", "import markdown; import yaml"],
-        { shell: false, stdio: "ignore" }
-      );
-      child.on("error", () => resolve(false));
-      child.on("close", (code) => resolve(code === 0));
-    });
-  }
-
-  /** Check if playwright is installed in the pipeline's node_modules. */
-  private checkPlaywright(): Promise<boolean> {
-    const playwrightDir = path.join(
-      this.pipelineRoot,
-      "node_modules",
-      "playwright"
-    );
-    return Promise.resolve(fs.existsSync(playwrightDir));
-  }
-
-  /** Install Python packages via pip. */
-  private installPipPackages(pythonPath: string): Promise<void> {
-    return this.runInstall(pythonPath, [
-      "-m",
-      "pip",
-      "install",
-      "--user",
-      "--quiet",
-      "markdown>=3.4",
-      "pyyaml>=6.0",
-    ]);
-  }
-
-  /** Install Playwright via npm + browser download. */
-  private async installPlaywright(nodePath: string): Promise<void> {
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-
-    // npm install playwright (in the pipeline root)
-    await this.runInstall(npmCmd, ["install", "--prefix", this.pipelineRoot, "playwright"]);
-
-    // Download Chromium browser
-    const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
-    await this.runInstall(npxCmd, [
-      "--prefix",
-      this.pipelineRoot,
-      "playwright",
-      "install",
-      "chromium",
-    ]);
-  }
-
-  /** Run an install command and reject on failure. */
-  private runInstall(command: string, args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(command, args, {
-        shell: false,
-        stdio: ["ignore", "pipe", "pipe"],
-        cwd: this.pipelineRoot,
-      });
-
-      let stderr = "";
-      child.stderr?.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      child.on("error", (err: Error) => {
-        reject(new Error(`Failed to run ${command}: ${err.message}`));
-      });
-
-      child.on("close", (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(
-            new Error(`${command} ${args[0]} failed (exit ${code}): ${stderr}`)
-          );
-        }
-      });
-    });
+    return true;
   }
 }

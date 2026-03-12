@@ -1,11 +1,15 @@
 /**
- * Copies the md2pdf pipeline scripts and themes into the extension's
- * pipeline/ directory for bundled distribution.
+ * Copies the md2pdf themes into the extension's pipeline/ directory
+ * for bundled distribution.
  *
  * Run via: npm run bundle-pipeline
  *
  * Expects the md2pdf repo to be a sibling directory (../md2pdf).
- * Only copies the files needed at runtime — no tests, docs, or dev files.
+ * Only copies theme CSS files — the Node.js pipeline modules are now
+ * built directly into the extension's TypeScript source (src/pipeline/).
+ *
+ * In the future, when the md2pdf core library ships Node.js modules,
+ * this script will also bundle those.
  */
 
 const fs = require("fs");
@@ -17,17 +21,10 @@ const SOURCE = process.env.MD2PDF_SOURCE
 const DEST = path.resolve(__dirname, "..", "pipeline");
 
 const FILES_TO_COPY = [
-  // Pipeline scripts
-  { src: "lib/md2svg.py", dest: "lib/md2svg.py" },
-  { src: "lib/md2html.py", dest: "lib/md2html.py" },
-  { src: "lib/html2pdf.js", dest: "lib/html2pdf.js" },
-  // Themes
+  // Themes (shared between CLI and extension)
   { src: "themes/default.css", dest: "themes/default.css" },
   { src: "themes/academic.css", dest: "themes/academic.css" },
   { src: "themes/minimal.css", dest: "themes/minimal.css" },
-  // Dependency manifests
-  { src: "requirements.txt", dest: "requirements.txt" },
-  { src: "package.json", dest: "package.json" },
 ];
 
 function ensureDir(dir) {
@@ -38,11 +35,13 @@ function ensureDir(dir) {
 
 function main() {
   if (!fs.existsSync(SOURCE)) {
-    console.error(
-      `Error: md2pdf source not found at ${SOURCE}\n` +
-        "Clone https://github.com/dcuccia/md2pdf as a sibling directory."
+    console.warn(
+      `Warning: md2pdf source not found at ${SOURCE}\n` +
+        "Themes will not be bundled. Clone https://github.com/dcuccia/md2pdf as a sibling directory."
     );
-    process.exit(1);
+    // Create empty themes directory so the extension can still build
+    ensureDir(path.join(DEST, "themes"));
+    return;
   }
 
   // Clean and recreate
@@ -50,6 +49,7 @@ function main() {
     fs.rmSync(DEST, { recursive: true });
   }
 
+  let copied = 0;
   for (const { src, dest } of FILES_TO_COPY) {
     const srcPath = path.join(SOURCE, src);
     const destPath = path.join(DEST, dest);
@@ -62,9 +62,10 @@ function main() {
     ensureDir(path.dirname(destPath));
     fs.copyFileSync(srcPath, destPath);
     console.log(`  ${src} → pipeline/${dest}`);
+    copied++;
   }
 
-  console.log(`\nBundled ${FILES_TO_COPY.length} files into pipeline/`);
+  console.log(`\nBundled ${copied} files into pipeline/`);
 }
 
 main();

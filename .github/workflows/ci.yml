@@ -1,0 +1,46 @@
+# CI: Lint, compile, and run tests on pull requests and pushes.
+#
+# Validates that the pure Node.js pipeline compiles and passes all tests.
+# Tests run on Ubuntu, Windows, and macOS to ensure cross-platform compatibility.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [18, 20, 22]
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v4
+
+      - name: Checkout md2pdf (for theme CSS files)
+        uses: actions/checkout@v4
+        with:
+          repository: dcuccia/md2pdf
+          path: md2pdf
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Bundle themes
+        run: npm run bundle-pipeline
+        env:
+          MD2PDF_SOURCE: ${{ github.workspace }}/md2pdf

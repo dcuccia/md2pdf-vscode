@@ -6,8 +6,8 @@
 #   2. MANUAL (workflow_dispatch) — creates a stable (or pre-release) from the
 #      version in package.json. Bump the version BEFORE triggering.
 #
-# Prerequisites:
-#   - The md2pdf sibling repo is checked out automatically by this workflow
+# The Node.js pipeline modules are built directly into the extension.
+# The md2pdf sibling repo is only needed for theme CSS files.
 
 name: Release
 
@@ -43,7 +43,7 @@ jobs:
       - name: Checkout extension
         uses: actions/checkout@v4
 
-      - name: Checkout md2pdf pipeline
+      - name: Checkout md2pdf (for theme CSS files)
         uses: actions/checkout@v4
         with:
           repository: dcuccia/md2pdf
@@ -57,6 +57,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run compile
 
       - name: Compute version and tag
         id: version
@@ -90,6 +93,8 @@ jobs:
           name: ${{ steps.version.outputs.tag }}
           body: |
             ## md2pdf for VS Code ${{ steps.version.outputs.tag }}
+
+            **Pure Node.js architecture** — no Python required. Uses system Chrome/Edge for PDF rendering.
 
             Install manually:
             ```

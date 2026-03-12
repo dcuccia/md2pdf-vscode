@@ -3,5 +3,5 @@ node_modules/
 .vscode-test/
 *.vsix
 .DS_Store
-pipeline/
+/pipeline/
 md2pdf/

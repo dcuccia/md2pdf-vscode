@@ -1,32 +1,32 @@
 /**
- * md2pdf Converter — Secure subprocess wrapper for the md2pdf CLI pipeline.
+ * md2pdf Converter — Pure Node.js pipeline for Markdown → HTML/PDF conversion.
  *
- * Resolution order for pipeline scripts:
- * 1. User-configured md2pdf.toolPath
- * 2. Bundled pipeline (shipped inside the extension)
- * 3. Sibling directory or home directory
+ * Runs the conversion pipeline entirely in-process using Node.js modules:
+ * - md2svg: Generates SVG charts from @chart blocks
+ * - md2html: Converts Markdown to styled HTML via markdown-it
+ * - html2pdf: Renders HTML to PDF via puppeteer-core + system browser
+ *
+ * Theme resolution order:
+ * 1. User-configured md2pdf.toolPath/themes/
+ * 2. Bundled themes (shipped inside the extension)
  *
  * Security hardening:
- * - Uses child_process.spawn (NOT exec) with shell: false
  * - Validates all file paths are within the workspace
+ * - HTML → PDF uses puppeteer-core with system browser (no downloaded binary)
+ * - Local HTTP server bound to 127.0.0.1 only
  * - No user-controlled strings in shell commands
- * - Paths passed as explicit arguments, never interpolated
  */
 
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import { spawn, ChildProcess } from "child_process";
-import { DependencyManager } from "./dependencies";
-
-/** Resolved paths to the md2pdf pipeline scripts. */
-interface PipelinePaths {
-  root: string;
-  md2svg: string;
-  md2html: string;
-  html2pdf: string;
-  themeCss: string;
-}
+import {
+  generateCharts,
+  convertMdToHtml,
+  convertHtmlToPdf,
+  detectBrowser,
+  getBrowserInstallHint,
+} from "./pipeline";
 
 export class Converter {
   private context: vscode.ExtensionContext;
@@ -45,17 +45,7 @@ export class Converter {
   ): Promise<string[]> {
     const validated = this.validatePath(mdPath);
     const config = this.getConfig();
-    const pipeline = this.resolvePipeline(config);
-
-    // Ensure dependencies are installed before running
-    const depManager = new DependencyManager(pipeline.root);
-    const ready = await depManager.ensureDependencies(
-      config.pythonPath,
-      config.nodePath
-    );
-    if (!ready) {
-      throw new Error("Required dependencies are not available.");
-    }
+    const themeCss = this.resolveTheme(config);
 
     const dir = path.dirname(validated);
     const base = path.basename(validated, ".md");
@@ -66,28 +56,27 @@ export class Converter {
 
     const results: string[] = [];
 
-    // Step 1: Generate SVG charts
-    await this.runPython(config.pythonPath, [pipeline.md2svg, validated]);
+    // Step 1: Generate SVG charts (in-process, no subprocess)
+    generateCharts(validated);
 
-    // Step 2: Convert MD → HTML
-    const md2htmlArgs = [
-      pipeline.md2html,
-      validated,
-      htmlPath,
-      pipeline.themeCss,
-    ];
-    if (config.imageScale !== 350) {
-      md2htmlArgs.push("--image-scale", String(config.imageScale));
-    }
-    await this.runPython(config.pythonPath, md2htmlArgs);
+    // Step 2: Convert MD → HTML (in-process via markdown-it)
+    convertMdToHtml(validated, htmlPath, themeCss, config.imageScale);
 
     if (format === "html") {
       results.push(path.basename(htmlPath));
       return results;
     }
 
-    // Step 3: Convert HTML → PDF
-    await this.runNode(config.nodePath, [pipeline.html2pdf, dir, htmlPath, pdfPath]);
+    // Step 3: Convert HTML → PDF (puppeteer-core + system browser)
+    const browserPath = detectBrowser(config.browserPath);
+    if (!browserPath) {
+      throw new Error(
+        `No Chrome/Edge browser found. ${getBrowserInstallHint()} ` +
+        "Or set md2pdf.browserPath in settings."
+      );
+    }
+
+    await convertHtmlToPdf(dir, path.basename(htmlPath), pdfPath, browserPath);
     results.push(path.basename(pdfPath));
 
     if (format === "both") {
@@ -150,105 +139,33 @@ export class Converter {
       theme: config.get<string>("theme", "default"),
       outputDirectory: config.get<string>("outputDirectory", ""),
       imageScale: config.get<number>("imageScale", 350),
-      pythonPath: config.get<string>("pythonPath", "python"),
-      nodePath: config.get<string>("nodePath", "node"),
+      browserPath: config.get<string>("browserPath", ""),
     };
   }
 
-  /** Resolve paths to all pipeline scripts. */
-  private resolvePipeline(config: ReturnType<Converter["getConfig"]>): PipelinePaths {
-    let root: string;
+  /** Resolve the CSS theme file path. */
+  private resolveTheme(config: ReturnType<Converter["getConfig"]>): string {
+    const themeFile = `${config.theme}.css`;
 
+    // Priority 1: User-configured tool path
     if (config.toolPath) {
-      root = path.resolve(config.toolPath);
-    } else {
-      // Priority 1: Bundled pipeline (inside the extension)
-      const bundled = path.join(this.context.extensionPath, "pipeline");
-      // Priority 2: Sibling directories and home
-      const candidates = [
-        bundled,
-        ...((vscode.workspace.workspaceFolders ?? []).map((f) =>
-          path.join(path.dirname(f.uri.fsPath), "md2pdf")
-        )),
-        path.join(process.env.HOME || process.env.USERPROFILE || "", "md2pdf"),
-      ];
-
-      const found = candidates.find((c) =>
-        fs.existsSync(path.join(c, "lib", "md2html.py"))
-      );
-
-      if (!found) {
-        throw new Error(
-          "md2pdf tool not found. Set md2pdf.toolPath in settings, " +
-          "or clone https://github.com/dcuccia/md2pdf to a sibling directory."
-        );
-      }
-      root = found;
+      const themeCss = path.join(path.resolve(config.toolPath), "themes", themeFile);
+      if (fs.existsSync(themeCss)) return themeCss;
     }
 
-    const themeCss = path.join(root, "themes", `${config.theme}.css`);
-    if (!fs.existsSync(themeCss)) {
-      throw new Error(`Theme not found: ${themeCss}`);
+    // Priority 2: Bundled themes (inside the extension)
+    const bundled = path.join(this.context.extensionPath, "pipeline", "themes", themeFile);
+    if (fs.existsSync(bundled)) return bundled;
+
+    // Priority 3: Sibling md2pdf directory
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const sibling = path.join(path.dirname(folder.uri.fsPath), "md2pdf", "themes", themeFile);
+      if (fs.existsSync(sibling)) return sibling;
     }
 
-    return {
-      root,
-      md2svg: path.join(root, "lib", "md2svg.py"),
-      md2html: path.join(root, "lib", "md2html.py"),
-      html2pdf: path.join(root, "lib", "html2pdf.js"),
-      themeCss,
-    };
-  }
-
-  /** Run a Python script via spawn (shell: false for security). */
-  private runPython(pythonPath: string, args: string[]): Promise<string> {
-    return this.runProcess(pythonPath, args);
-  }
-
-  /** Run a Node.js script via spawn (shell: false for security). */
-  private runNode(nodePath: string, args: string[]): Promise<string> {
-    return this.runProcess(nodePath, args);
-  }
-
-  /**
-   * Spawn a subprocess securely.
-   *
-   * Security:
-   * - shell: false prevents shell injection
-   * - Arguments are passed as an array, never concatenated
-   * - No user-controlled strings reach the shell
-   */
-  private runProcess(command: string, args: string[]): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const child: ChildProcess = spawn(command, args, {
-        shell: false,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env },
-      });
-
-      let stdout = "";
-      let stderr = "";
-
-      child.stdout?.on("data", (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      child.stderr?.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      child.on("error", (err: Error) => {
-        reject(new Error(`Failed to start ${command}: ${err.message}`));
-      });
-
-      child.on("close", (code: number | null) => {
-        if (code === 0) {
-          resolve(stdout);
-        } else {
-          const detail = stderr || stdout || `exit code ${code}`;
-          reject(new Error(`${path.basename(command)} failed: ${detail}`));
-        }
-      });
-    });
+    throw new Error(
+      `Theme "${config.theme}" not found. ` +
+      "Set md2pdf.toolPath in settings or ensure themes are bundled with the extension."
+    );
   }
 }

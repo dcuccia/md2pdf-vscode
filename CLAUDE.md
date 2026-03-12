@@ -2,9 +2,12 @@
 
 ## What is this project?
 
-md2pdf-vscode is a VS Code extension that wraps the [md2pdf](https://github.com/dcuccia/md2pdf)
-CLI tool. It provides right-click context menu commands to export Markdown files as HTML, PDF,
-or both.
+md2pdf-vscode is a VS Code extension that exports Markdown files as HTML, PDF,
+or both. It uses a pure Node.js pipeline (markdown-it, puppeteer-core) with
+system Chrome/Edge for PDF rendering — no Python or Playwright download required.
+
+The extension shares conventions (themes, @chart syntax, frontmatter) with the
+[md2pdf](https://github.com/dcuccia/md2pdf) CLI tool.
 
 ## Quick Reference
 
@@ -31,26 +34,32 @@ npm test
 User right-clicks .md file
   → VS Code command
     → Converter.convert()
-      → spawn python lib/md2svg.py   (chart generation)
-      → spawn python lib/md2html.py  (MD → HTML)
-      → spawn node lib/html2pdf.js   (HTML → PDF)
+      → md2svg (in-process)      — @chart YAML → SVG files
+      → md2html (in-process)     — Markdown → styled HTML via markdown-it
+      → html2pdf (in-process)    — HTML → PDF via puppeteer-core + system Chrome/Edge
     → Show success/error notification
 ```
 
 ## Key Files
 
 - `src/extension.ts` — Entry point. Registers commands, handles UI.
-- `src/converter.ts` — Subprocess wrapper. Runs md2pdf pipeline securely.
-- `src/dependencies.ts` — Auto-installs Python/Node.js deps on first use.
-- `scripts/bundle-pipeline.js` — Copies md2pdf lib/ and themes/ into extension.
-- `test/converter.test.ts` — Unit tests for path validation and security.
+- `src/converter.ts` — Orchestrates the in-process Node.js pipeline.
+- `src/dependencies.ts` — Validates system browser availability.
+- `src/pipeline/` — Node.js pipeline modules:
+  - `md2svg.ts` — @chart YAML → SVG chart generation
+  - `md2html.ts` — Markdown → HTML via markdown-it + transforms
+  - `html2pdf.ts` — HTML → PDF via puppeteer-core + system browser
+  - `browser-detect.ts` — Cross-platform Chrome/Edge/Chromium detection
+  - `index.ts` — Barrel exports
+- `scripts/bundle-pipeline.js` — Copies theme CSS from md2pdf repo.
+- `test/converter.test.ts` — Unit tests for pipeline, security, and config.
 - `package.json` — Extension manifest with commands, menus, configuration.
 
 ## Security Rules (CRITICAL)
 
-- **ALWAYS** use `spawn()` with `shell: false` — NEVER use `exec()` or `shell: true`
-- **ALWAYS** pass arguments as arrays — NEVER interpolate user strings into commands
+- **NEVER** use `exec()` or `shell: true` — no shell injection vectors
 - **ALWAYS** validate file paths are within workspace before processing
+- **ALWAYS** bind local servers to `127.0.0.1` with directory traversal checks
 - **NEVER** handle secrets, credentials, or authentication tokens
 - **NEVER** make network requests from the extension itself
 
@@ -58,10 +67,11 @@ User right-clicks .md file
 
 - TypeScript strict mode, 2-space indent
 - JSDoc on exported functions
-- Follow existing code patterns in `src/converter.ts` for subprocess calls
+- Pipeline modules in `src/pipeline/` follow the md2pdf convention interfaces
 - Test security invariants explicitly (see `test/converter.test.ts`)
-- Keep the extension thin — business logic lives in md2pdf, not here
+- Keep theme CSS in the md2pdf repo — bundle via `bundle-pipeline.js`
 
-## Related Project
+## Related Projects
 
-The CLI tool this wraps: https://github.com/dcuccia/md2pdf
+- Core library: https://github.com/dcuccia/md2pdf
+- Cross-repo plan: `docs/cross-repo-migration-plan.md`
