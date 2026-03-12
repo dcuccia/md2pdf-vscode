@@ -22,7 +22,7 @@
     "converter"
   ],
   "activationEvents": [],
-  "main": "./out/extension.js",
+  "main": "./out/src/extension.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/dcuccia/md2pdf-vscode"
