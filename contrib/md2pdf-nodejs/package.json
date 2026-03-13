@@ -1,0 +1,55 @@
+{
+  "name": "md2pdf",
+  "version": "0.2.0",
+  "description": "Markdown to styled HTML + PDF converter with inline chart generation from YAML data blocks",
+  "main": "lib/index.js",
+  "files": [
+    "lib/",
+    "themes/"
+  ],
+  "exports": {
+    ".": "./lib/index.js",
+    "./themes/*": "./themes/*"
+  },
+  "license": "MIT",
+  "author": "David Cuccia",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dcuccia/md2pdf.git"
+  },
+  "keywords": [
+    "markdown",
+    "pdf",
+    "converter",
+    "charts",
+    "svg",
+    "mermaid",
+    "markdown-it",
+    "html"
+  ],
+  "scripts": {
+    "test": "npx jest --verbose",
+    "test:py": "python -m pytest tests/ -v",
+    "test:all": "python -m pytest tests/ -v && npx jest --verbose",
+    "convert": "node lib/html2pdf.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.1",
+    "markdown-it": "^14.1.1",
+    "puppeteer-core": "^24.39.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "peerDependencies": {
+    "playwright": "^1.58.2"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  }
+}
