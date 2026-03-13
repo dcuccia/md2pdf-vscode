@@ -11,7 +11,7 @@
  *     |------|------|
  *     | a    | 1    |
  *
- * Supported chart types: bar, hbar, pie, sunburst
+ * Supported chart types: bar, hbar, pie, donut, sunburst
  *
  * This module is a direct port of md2pdf's lib/md2svg.py to TypeScript.
  * It will eventually live in the md2pdf core library (dcuccia/md2pdf).

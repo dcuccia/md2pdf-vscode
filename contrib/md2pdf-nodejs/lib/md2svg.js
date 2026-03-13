@@ -12,7 +12,7 @@
  *     |------|------|
  *     | a    | 1    |
  *
- * Supported chart types: bar, hbar, pie, sunburst
+ * Supported chart types: bar, hbar, pie, donut, sunburst
  *
  * Node.js implementation for SVG chart generation.
  * It is part of the md2pdf core library (dcuccia/md2pdf).
