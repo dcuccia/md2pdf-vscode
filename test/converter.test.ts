@@ -206,6 +206,49 @@ suite("Theme Resolution", () => {
       "Bundle should not copy Python manifests"
     );
   });
+
+  test("bundle script detects md2pdf Node.js pipeline modules", () => {
+    const bundleScript = fs.readFileSync(
+      path.join(__dirname, "..", "scripts", "bundle-pipeline.js"),
+      "utf-8"
+    );
+    // Should check for md2html.js as marker for Node.js pipeline
+    assert.ok(
+      bundleScript.includes("md2html.js"),
+      "Bundle should detect md2pdf Node.js modules"
+    );
+    assert.ok(
+      bundleScript.includes("md2svg.js"),
+      "Bundle should copy md2svg.js when available"
+    );
+    assert.ok(
+      bundleScript.includes("browser-detect.js"),
+      "Bundle should copy browser-detect.js when available"
+    );
+  });
+
+  test("bundle script verifies md2html.js is markdown-it based", () => {
+    const bundleScript = fs.readFileSync(
+      path.join(__dirname, "..", "scripts", "bundle-pipeline.js"),
+      "utf-8"
+    );
+    // Should check that md2html.js contains markdown-it (not old Playwright version)
+    assert.ok(
+      bundleScript.includes("markdown-it") || bundleScript.includes("markdownit"),
+      "Bundle should verify md2html.js is the new markdown-it-based module"
+    );
+  });
+
+  test("bundle script generates manifest.json for bundled modules", () => {
+    const bundleScript = fs.readFileSync(
+      path.join(__dirname, "..", "scripts", "bundle-pipeline.js"),
+      "utf-8"
+    );
+    assert.ok(
+      bundleScript.includes("manifest.json"),
+      "Bundle should generate manifest.json when JS modules are bundled"
+    );
+  });
 });
 
 suite("Configuration", () => {
@@ -250,5 +293,65 @@ suite("Configuration", () => {
     assert.ok(deps["markdown-it"], "Must have markdown-it dependency");
     assert.ok(deps["js-yaml"], "Must have js-yaml dependency");
     assert.ok(deps["puppeteer-core"], "Must have puppeteer-core dependency");
+  });
+});
+
+suite("Cross-Repo Integration", () => {
+  test("migration plan exists and documents consolidated PR approach", () => {
+    const planPath = path.join(__dirname, "..", "docs", "cross-repo-migration-plan.md");
+    assert.ok(fs.existsSync(planPath), "Cross-repo migration plan must exist");
+    const plan = fs.readFileSync(planPath, "utf-8");
+    assert.ok(plan.includes("PR A"), "Plan must document PR A (consolidated vscode PR)");
+    assert.ok(plan.includes("PR B"), "Plan must document PR B (consolidated md2pdf PR)");
+    assert.ok(plan.includes("Done"), "Plan must include done criteria");
+  });
+
+  test("md2pdf Node.js spec document exists", () => {
+    const specPath = path.join(__dirname, "..", "docs", "md2pdf-nodejs-spec.md");
+    assert.ok(fs.existsSync(specPath), "md2pdf Node.js spec must exist");
+    const spec = fs.readFileSync(specPath, "utf-8");
+    assert.ok(spec.includes("lib/md2svg.js"), "Spec must define md2svg.js");
+    assert.ok(spec.includes("lib/md2html.js"), "Spec must define md2html.js");
+    assert.ok(spec.includes("lib/browser-detect.js"), "Spec must define browser-detect.js");
+    assert.ok(spec.includes("lib/index.js"), "Spec must define index.js barrel");
+    assert.ok(spec.includes("puppeteer-core"), "Spec must reference puppeteer-core");
+    assert.ok(spec.includes("package.json"), "Spec must include package.json changes");
+  });
+
+  test("pipeline modules are extraction-ready (portable comments)", () => {
+    const pipelineDir = path.join(__dirname, "..", "src", "pipeline");
+    const modules = ["md2svg.ts", "md2html.ts", "html2pdf.ts", "browser-detect.ts"];
+    for (const mod of modules) {
+      const source = fs.readFileSync(path.join(pipelineDir, mod), "utf-8");
+      assert.ok(
+        source.includes("md2pdf") && (source.includes("core library") || source.includes("dcuccia/md2pdf")),
+        `${mod} must document its relationship to the md2pdf core library`
+      );
+    }
+  });
+
+  test("bundle-pipeline.js supports MD2PDF_SOURCE env var", () => {
+    const bundleScript = fs.readFileSync(
+      path.join(__dirname, "..", "scripts", "bundle-pipeline.js"),
+      "utf-8"
+    );
+    assert.ok(
+      bundleScript.includes("MD2PDF_SOURCE"),
+      "Bundle script must support MD2PDF_SOURCE env var for CI"
+    );
+  });
+
+  test("CI workflow checks out md2pdf for bundling", () => {
+    const ciPath = path.join(__dirname, "..", ".github", "workflows", "ci.yml");
+    assert.ok(fs.existsSync(ciPath), "CI workflow must exist");
+    const ci = fs.readFileSync(ciPath, "utf-8");
+    assert.ok(
+      ci.includes("dcuccia/md2pdf"),
+      "CI must checkout md2pdf repo for themes/modules"
+    );
+    assert.ok(
+      ci.includes("bundle-pipeline"),
+      "CI must run bundle-pipeline"
+    );
   });
 });

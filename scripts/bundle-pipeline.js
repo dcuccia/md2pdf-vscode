@@ -1,15 +1,26 @@
 /**
- * Copies the md2pdf themes into the extension's pipeline/ directory
- * for bundled distribution.
+ * Bundles assets from the md2pdf core library into the extension's pipeline/
+ * directory for distribution.
  *
  * Run via: npm run bundle-pipeline
  *
- * Expects the md2pdf repo to be a sibling directory (../md2pdf).
- * Only copies theme CSS files — the Node.js pipeline modules are now
- * built directly into the extension's TypeScript source (src/pipeline/).
+ * Bundles:
+ * 1. Theme CSS files (always — shared between CLI and extension)
+ * 2. Node.js pipeline modules (when available — from md2pdf's lib/ directory)
  *
- * In the future, when the md2pdf core library ships Node.js modules,
- * this script will also bundle those.
+ * When md2pdf ships Node.js pipeline modules (lib/md2svg.js, lib/md2html.js,
+ * lib/html2pdf.js, lib/browser-detect.js), this script copies them into
+ * pipeline/lib/ so the extension can use them instead of its own src/pipeline/
+ * TypeScript copies. This enables the layered architecture: md2pdf owns the
+ * pipeline, md2pdf-vscode wraps it.
+ *
+ * Until md2pdf ships those modules, the extension uses its own src/pipeline/
+ * TypeScript modules (compiled to out/src/pipeline/). Both paths produce
+ * identical behavior — the TypeScript modules were ported from the same source.
+ *
+ * Source resolution:
+ *   1. MD2PDF_SOURCE environment variable (used in CI)
+ *   2. Sibling directory (../md2pdf — local development)
  */
 
 const fs = require("fs");
@@ -20,11 +31,22 @@ const SOURCE = process.env.MD2PDF_SOURCE
   : path.resolve(__dirname, "..", "..", "md2pdf");
 const DEST = path.resolve(__dirname, "..", "pipeline");
 
-const FILES_TO_COPY = [
-  // Themes (shared between CLI and extension)
+/** Theme CSS files — always copied when available. */
+const THEME_FILES = [
   { src: "themes/default.css", dest: "themes/default.css" },
   { src: "themes/academic.css", dest: "themes/academic.css" },
   { src: "themes/minimal.css", dest: "themes/minimal.css" },
+];
+
+/**
+ * Node.js pipeline modules — copied when md2pdf ships them.
+ * These replace the extension's src/pipeline/ TypeScript modules.
+ */
+const PIPELINE_JS_FILES = [
+  { src: "lib/md2svg.js", dest: "lib/md2svg.js" },
+  { src: "lib/md2html.js", dest: "lib/md2html.js" },
+  { src: "lib/html2pdf.js", dest: "lib/html2pdf.js" },
+  { src: "lib/browser-detect.js", dest: "lib/browser-detect.js" },
 ];
 
 function ensureDir(dir) {
@@ -33,7 +55,34 @@ function ensureDir(dir) {
   }
 }
 
+/**
+ * Copy a list of files from SOURCE to DEST, returning count of copied files.
+ */
+function copyFiles(files, label) {
+  let copied = 0;
+  for (const { src, dest } of files) {
+    const srcPath = path.join(SOURCE, src);
+    const destPath = path.join(DEST, dest);
+
+    if (!fs.existsSync(srcPath)) {
+      continue;
+    }
+
+    ensureDir(path.dirname(destPath));
+    fs.copyFileSync(srcPath, destPath);
+    console.log(`  ${src} → pipeline/${dest}`);
+    copied++;
+  }
+  if (copied > 0) {
+    console.log(`  ✓ ${copied} ${label} file(s) bundled`);
+  }
+  return copied;
+}
+
 function main() {
+  console.log(`md2pdf source: ${SOURCE}`);
+  console.log(`bundle target: ${DEST}\n`);
+
   if (!fs.existsSync(SOURCE)) {
     console.warn(
       `Warning: md2pdf source not found at ${SOURCE}\n` +
@@ -49,23 +98,50 @@ function main() {
     fs.rmSync(DEST, { recursive: true });
   }
 
-  let copied = 0;
-  for (const { src, dest } of FILES_TO_COPY) {
-    const srcPath = path.join(SOURCE, src);
-    const destPath = path.join(DEST, dest);
+  // 1. Bundle themes (always)
+  console.log("Bundling themes...");
+  const themesCopied = copyFiles(THEME_FILES, "theme");
 
-    if (!fs.existsSync(srcPath)) {
-      console.warn(`Warning: ${srcPath} not found, skipping`);
-      continue;
-    }
-
-    ensureDir(path.dirname(destPath));
-    fs.copyFileSync(srcPath, destPath);
-    console.log(`  ${src} → pipeline/${dest}`);
-    copied++;
+  if (themesCopied === 0) {
+    console.warn("Warning: No theme files found in md2pdf source");
+    ensureDir(path.join(DEST, "themes"));
   }
 
-  console.log(`\nBundled ${copied} files into pipeline/`);
+  // 2. Bundle Node.js pipeline modules (when available)
+  //
+  // Check if md2pdf has shipped Node.js pipeline modules by looking for the
+  // marker file: lib/md2html.js (the most complex module). If it exists with
+  // the markdown-it-based implementation, bundle all JS modules.
+  const md2htmlJs = path.join(SOURCE, "lib", "md2html.js");
+  const hasNodePipeline = fs.existsSync(md2htmlJs) && (() => {
+    // Verify it's the new markdown-it-based module, not something else
+    const content = fs.readFileSync(md2htmlJs, "utf-8");
+    return content.includes("markdown-it") || content.includes("markdownit");
+  })();
+
+  if (hasNodePipeline) {
+    console.log("\nBundling Node.js pipeline modules from md2pdf...");
+    const jsCopied = copyFiles(PIPELINE_JS_FILES, "pipeline");
+    if (jsCopied > 0) {
+      // Write a manifest so the extension knows bundled modules are available
+      const manifest = {
+        source: "md2pdf",
+        bundledAt: new Date().toISOString(),
+        modules: PIPELINE_JS_FILES
+          .filter(f => fs.existsSync(path.join(DEST, f.dest)))
+          .map(f => f.dest),
+      };
+      const manifestPath = path.join(DEST, "lib", "manifest.json");
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+      console.log(`  manifest.json → pipeline/lib/manifest.json`);
+      console.log(`\n✓ Bundled pipeline uses md2pdf's Node.js modules`);
+    }
+  } else {
+    console.log("\nNode.js pipeline modules not yet available in md2pdf.");
+    console.log("Extension will use its own src/pipeline/ TypeScript modules.");
+  }
+
+  console.log("\nDone.");
 }
 
 main();

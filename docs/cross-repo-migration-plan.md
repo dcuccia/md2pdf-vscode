@@ -1,7 +1,7 @@
 # Cross-Repo Migration Plan: Pure Node.js Architecture
 
 **Repos**: [md2pdf](https://github.com/dcuccia/md2pdf) + [md2pdf-vscode](https://github.com/dcuccia/md2pdf-vscode)
-**Date**: 2026-03-12
+**Date**: 2026-03-12 (updated)
 **Approach**: Dovetail — both repos evolve together, retaining the layered architecture
 
 ---
@@ -12,6 +12,7 @@
 2. **Layered architecture** — md2pdf provides the pipeline library; md2pdf-vscode wraps it for VS Code
 3. **No auto-merge** — all changes via PRs with review
 4. **Cross-repo coordination** — PRs reference each other; CI validates the integration
+5. **Two PRs, not four** — consolidated to minimize integration risk
 
 ---
 
@@ -37,33 +38,40 @@ md2pdf-vscode repo (extension):
 
 ```
 md2pdf repo (core library):
-  lib/md2svg.js     → SVG chart generation (Node.js port)
-  lib/md2html.js    → MD → HTML (markdown-it + plugins)
-  lib/html2pdf.js   → HTML → PDF (puppeteer-core + system browser)
+  lib/md2svg.js       → SVG chart generation (Node.js — markdown-it)
+  lib/md2html.js      → MD → HTML (Node.js — markdown-it + transforms)
+  lib/html2pdf.js     → HTML → PDF (puppeteer-core + system browser)
   lib/browser-detect.js → cross-platform browser detection
-  lib/md2svg.py     → SVG chart generation (kept for standalone Python use)
-  lib/md2html.py    → MD → HTML (kept for standalone Python use)
-  themes/*.css      → shared CSS themes (unchanged)
-  md2pdf.sh/ps1     → CLI wrapper (uses Node.js pipeline by default)
-  package.json      → adds markdown-it, js-yaml, puppeteer-core
+  lib/index.js        → barrel exports for programmatic use
+  lib/md2svg.py       → SVG chart generation (kept for standalone Python use)
+  lib/md2html.py      → MD → HTML (kept for standalone Python use)
+  themes/*.css        → shared CSS themes (unchanged)
+  md2pdf.sh/ps1       → CLI wrapper (Node.js by default, Python fallback)
+  package.json        → publishable npm package with pipeline modules
+  tests/              → Jest tests for Node.js pipeline + pytest for Python
 
 md2pdf-vscode repo (extension):
-  src/pipeline/*    → Node.js pipeline modules (eventually imported from md2pdf)
-  src/converter.ts  → calls pipeline modules in-process (no subprocess)
+  src/pipeline/*      → Local Node.js pipeline (used until md2pdf bundles)
+  src/converter.ts    → calls pipeline modules in-process (no subprocess)
   src/dependencies.ts → checks system browser only
-  scripts/bundle-pipeline.js → copies themes from md2pdf
-  package.json      → markdown-it, js-yaml, puppeteer-core as dependencies
+  scripts/bundle-pipeline.js → copies themes + JS modules from md2pdf
+  pipeline/lib/       → bundled JS modules from md2pdf (when available)
+  pipeline/themes/    → bundled CSS themes from md2pdf
+  package.json        → markdown-it, js-yaml, puppeteer-core as dependencies
 ```
 
 ---
 
-## PR Sequence
+## Consolidated PR Sequence (2 PRs)
 
-### PR 1: md2pdf-vscode — Node.js pipeline implementation ← **THIS PR**
+### PR A: md2pdf-vscode — Node.js pipeline + integration-ready ← **THIS PR**
 
 **Branch**: `copilot/evaluate-nodejs-architecture`
+**Consolidates**: Original PRs 1 and 3
 
-Changes:
+This PR implements the full Node.js pipeline in the extension AND prepares for
+seamless integration with md2pdf's future Node.js modules:
+
 - [x] Add Node.js pipeline modules (`src/pipeline/`)
   - `browser-detect.ts` — cross-platform browser detection
   - `md2svg.ts` — port of md2svg.py to TypeScript
@@ -73,48 +81,45 @@ Changes:
 - [x] Update `converter.ts` — use in-process pipeline (no subprocess spawning)
 - [x] Update `dependencies.ts` — browser detection only (no Python/pip)
 - [x] Update `package.json` — add markdown-it, js-yaml, puppeteer-core; add browserPath setting; remove pythonPath/nodePath
-- [x] Update `scripts/bundle-pipeline.js` — copy themes only (no Python scripts)
 - [x] Update tests for new architecture
 - [x] Add CI workflow (`.github/workflows/ci.yml`)
 - [x] Update release workflow
 - [x] Update documentation
+- [x] **Integration-ready**: `bundle-pipeline.js` detects and bundles md2pdf's
+  Node.js modules when available (themes always, JS modules when md2pdf ships them)
+- [x] **Spec document**: `docs/md2pdf-nodejs-spec.md` — exact specification for
+  what md2pdf needs to implement
 
-### PR 2: md2pdf — Add Node.js pipeline modules (FUTURE)
+**How integration works**: When md2pdf ships Node.js modules (PR B), running
+`npm run bundle-pipeline` in the extension automatically detects and bundles them
+into `pipeline/lib/`. No code changes needed in the extension — just rebuild.
+
+### PR B: md2pdf — Node.js pipeline modules + npm packaging
 
 **Branch**: to be created in `dcuccia/md2pdf`
+**Consolidates**: Original PRs 2 and 4
+**Specification**: See [`docs/md2pdf-nodejs-spec.md`](./md2pdf-nodejs-spec.md) for exact details
 
-Changes needed:
-- [ ] Add `lib/md2svg.js` — port from `md2pdf-vscode/src/pipeline/md2svg.ts` (compile to JS)
-- [ ] Add `lib/md2html.js` — port from `md2pdf-vscode/src/pipeline/md2html.ts`
-- [ ] Update `lib/html2pdf.js` — switch from Playwright to puppeteer-core + system browser
+This PR adds Node.js equivalents of the Python pipeline scripts and makes the
+package publishable to npm:
+
+- [ ] Add `lib/md2svg.js` — SVG chart generation (ported from TypeScript in md2pdf-vscode)
+- [ ] Add `lib/md2html.js` — MD → HTML via markdown-it + transform pipeline
 - [ ] Add `lib/browser-detect.js` — cross-platform browser detection
-- [ ] Update `package.json` — add markdown-it, js-yaml, puppeteer-core; keep playwright as optional
+- [ ] Update `lib/html2pdf.js` — switch from Playwright to puppeteer-core + system browser
+- [ ] Add `lib/index.js` — barrel exports for programmatic use
+- [ ] Update `package.json` — add markdown-it, js-yaml, puppeteer-core; make npm-publishable
 - [ ] Update `md2pdf.sh` / `md2pdf.ps1` — use Node.js pipeline by default, Python as fallback
-- [ ] Update CI (`ci.yml`) — add Node.js pipeline tests alongside existing Python tests
-- [ ] Keep Python scripts (`lib/md2svg.py`, `lib/md2html.py`) for backward compatibility
+- [ ] Add Jest tests for Node.js pipeline modules
+- [ ] Update CI — test both Node.js and Python pipelines; add cross-repo integration test
+- [ ] Keep Python scripts for backward compatibility
 - [ ] Update README.md and docs
-
-### PR 3: md2pdf-vscode — Use md2pdf's published pipeline (FUTURE)
-
-Once PR 2 lands, the extension can import the pipeline from md2pdf instead of maintaining its own copy:
-
-- [ ] Update `scripts/bundle-pipeline.js` to copy `lib/*.js` from md2pdf
-- [ ] Remove `src/pipeline/` (now bundled from md2pdf)
-- [ ] Or: if md2pdf publishes an npm package, add it as a dependency
-
-### PR 4: md2pdf — Optional CLI separation (FUTURE, if desired)
-
-If the team decides to separate the CLI wrapper from the core library:
-- [ ] Create `md2pdf-cli` repo with shell scripts and CLI entry point
-- [ ] `md2pdf` becomes a pure Node.js library (publishable to npm)
-- [ ] `md2pdf-cli` depends on `md2pdf` via npm
-- [ ] `md2pdf-vscode` depends on `md2pdf` via npm
 
 ---
 
 ## Evaluation: "Done" Criteria
 
-### Phase 1 Complete (This PR — md2pdf-vscode)
+### PR A Complete (md2pdf-vscode — this PR)
 
 | Criterion | Status | Validation |
 |---|---|---|
@@ -124,35 +129,40 @@ If the team decides to separate the CLI wrapper from the core library:
 | No Playwright dependency | ✅ | Only puppeteer-core in package.json |
 | System browser detection works on all platforms | ✅ | Well-known paths for win32/darwin/linux |
 | browserPath setting available | ✅ | package.json contributes.configuration |
-| All 6 transforms ported (mermaid, alerts, math, syntax, tasks, pagebreaks) | ✅ | md2html.ts transform pipeline |
-| All 5 chart types ported (bar, hbar, pie, donut, sunburst) | ✅ | md2svg.ts chart generators |
+| All 6 transforms ported | ✅ | md2html.ts transform pipeline |
+| All 5 chart types ported | ✅ | md2svg.ts chart generators |
 | Frontmatter parsing works | ✅ | md2html.ts parseFrontmatter() |
-| CI workflow runs on ubuntu/windows/macos × Node 18/20/22 | ✅ | .github/workflows/ci.yml |
-| Bundle script copies themes only | ✅ | scripts/bundle-pipeline.js |
+| CI on 3 OSes × 3 Node versions | ✅ | .github/workflows/ci.yml |
+| Bundle script copies themes | ✅ | scripts/bundle-pipeline.js |
+| Bundle script detects md2pdf JS modules | ✅ | Copies lib/*.js when available |
 | HTML export works without browser | ✅ | Converter skips PDF step |
 | PDF export uses system Chrome/Edge | ✅ | puppeteer-core + detectBrowser() |
+| Spec for PR B exists | ✅ | docs/md2pdf-nodejs-spec.md |
 
-### Phase 2 Complete (Future — md2pdf)
+### PR B Complete (md2pdf — future)
 
 | Criterion | Validation |
 |---|---|
-| Node.js pipeline modules added to lib/ | `lib/md2svg.js`, `lib/md2html.js`, `lib/browser-detect.js` exist |
+| Node.js pipeline modules in lib/ | `lib/md2svg.js`, `lib/md2html.js`, `lib/browser-detect.js`, `lib/index.js` exist |
 | `html2pdf.js` uses puppeteer-core | No `require("playwright")` in lib/html2pdf.js |
+| npm-publishable package.json | `main` field, exports, proper metadata |
 | CLI works with Node.js pipeline | `./md2pdf.sh doc.md` produces PDF without Python |
-| Python pipeline still works (backward compat) | `python lib/md2html.py` still functions |
-| CI tests both Node.js and Python pipelines | CI matrix includes both |
-| SVG chart output matches between Python and JS | Visual diff or byte comparison |
-| HTML output matches between Python and JS | Diff of generated HTML |
+| Python pipeline still works | `python lib/md2html.py` still functions |
+| CI tests Node.js + Python pipelines | CI matrix includes both |
+| Cross-repo integration test passes | Extension bundles md2pdf's JS modules successfully |
+| SVG chart output matches | Visual diff or byte comparison between Python and JS |
+| HTML output matches | Diff of generated HTML between Python and JS |
 
-### Phase 3 Complete (Future — integration)
+### Cross-Repo Integration Complete
 
 | Criterion | Validation |
 |---|---|
-| Extension bundles JS pipeline from md2pdf repo | `bundle-pipeline.js` copies `lib/*.js` |
-| No duplicate pipeline code | `src/pipeline/` removed from md2pdf-vscode |
-| Cross-repo CI passes | Both repos' CI green |
+| Extension bundles md2pdf JS modules | `npm run bundle-pipeline` copies lib/*.js |
+| `pipeline/lib/manifest.json` generated | Confirms bundled module source |
+| Both repos' CI green | No regressions |
 | End-to-end: md → HTML works | Extension export produces correct HTML |
 | End-to-end: md → PDF works | Extension export produces correct PDF |
+| No duplicate logic long-term | src/pipeline/ can be removed after md2pdf ships modules |
 
 ---
 
@@ -167,38 +177,36 @@ matrix:
   node: [18, 20, 22]
 steps:
   - Checkout extension
-  - Checkout md2pdf (for themes)
+  - Checkout md2pdf (for themes + JS modules when available)
   - npm ci
   - npm run compile
-  - npm run bundle-pipeline  # copies themes
+  - npm run bundle-pipeline  # copies themes; copies JS modules when available
 ```
 
-### md2pdf CI (core repo — proposed update)
+### md2pdf CI (core repo — proposed in PR B)
 
 ```yaml
-# .github/workflows/ci.yml (updated)
+# .github/workflows/ci.yml
 jobs:
-  test-python:  # existing
-    matrix:
-      os: [ubuntu-latest, windows-latest]
-      python: [3.10, 3.11, 3.12]
+  test-python:  # keep existing
+    matrix: { os: [ubuntu, windows], python: [3.10, 3.11, 3.12] }
     steps: python -m pytest tests/ -v
 
-  test-node:  # updated to use puppeteer-core
-    matrix:
-      os: [ubuntu-latest, windows-latest]
-      node: [18, 20, 22]
+  test-node:  # update to use puppeteer-core
+    matrix: { os: [ubuntu, windows, macos], node: [18, 20, 22] }
     steps:
-      - npm install  # now installs markdown-it, js-yaml, puppeteer-core
+      - npm install
+      - Install system browser (CI has Chrome)
       - npx jest --verbose
 
-  test-integration:  # new — validates cross-repo compatibility
+  test-integration:  # new — cross-repo validation
     steps:
       - Checkout md2pdf
       - Checkout md2pdf-vscode
       - npm ci (in extension dir)
-      - npm run bundle-pipeline
+      - npm run bundle-pipeline (should bundle JS modules)
       - npm run compile
+      - Verify pipeline/lib/manifest.json exists
 ```
 
 ---
@@ -226,7 +234,7 @@ These conventions are shared between CLI and extension, regardless of implementa
 
 | Phase | Effort | Dependencies |
 |---|---|---|
-| PR 1: md2pdf-vscode Node.js pipeline | Done | None |
-| PR 2: md2pdf Node.js modules | 3–5 days | PR 1 merged (to port TypeScript back to JS) |
-| PR 3: Integration (extension uses md2pdf's modules) | 1–2 days | PR 2 merged |
-| PR 4: CLI separation (optional) | 2–3 days | PR 2 merged |
+| PR A: md2pdf-vscode (pipeline + integration-ready) | Done | None |
+| PR B: md2pdf (Node.js modules + npm packaging) | 3–5 days | PR A merged |
+| Integration validation | 1 day | PR B merged |
+| Optional: Remove src/pipeline/ from md2pdf-vscode | 1 day | Integration validated |
